@@ -1,8 +1,4 @@
-# Useful commands
+This repository accompanies Blog Post AWS Data Api for Amazon Aurora Serverless by Goran Opacic
 
- * `npm run build`   compile typescript to js
- * `npm run watch`   watch for changes and compile
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk synth`       emits the synthesized CloudFormation template
-# dataapi-demo
+https://madabout.cloud/2019/08/23/aws-data-api-for-amazon-aurora-serverless
+
