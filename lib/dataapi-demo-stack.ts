@@ -31,6 +31,7 @@ export class DataapiDemoStack extends cdk.Stack {
       code: lambda.Code.asset('./lambda'),
       environment: {
         DBCLUSTERARN: aurora.clusterarn,
+        DBCLUSTERID: aurora.clusterid,
         SECRETARN: aurora.secretarn
       },
       timeout: Duration.seconds(60)
@@ -45,6 +46,11 @@ export class DataapiDemoStack extends cdk.Stack {
     statement2.addResources(aurora.clusterarn)
     statement2.addActions('rds-data:ExecuteStatement', 'rds-data:BatchExecuteStatement', 'rds-data:BeginTransaction', 'rds-data:CommitTransaction', 'rds-data:RollbackTransaction');
     demoLambda.addToRolePolicy(statement2);
+
+    const statement3 = new iam.PolicyStatement();
+    statement3.addResources(aurora.clusterarn)
+    statement3.addActions('rds:DescribeDBClusters');
+    demoLambda.addToRolePolicy(statement3);
 
     //API GW
     const rootApi = new apigateway.RestApi(this, 'demo-api', {});

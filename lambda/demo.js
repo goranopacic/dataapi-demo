@@ -4,7 +4,16 @@
 * @license MIT
 */
 const AWS = require('aws-sdk')
-const RDS = new AWS.RDSDataService()
+const RDS = new AWS.RDS();
+const RDSDATA = new AWS.RDSDataService()
+
+AWS.config.update({
+  maxRetries: 10,
+  httpOptions: {
+      timeout: 60000,
+      connectTimeout: 60000
+  }
+});
 
 /**********************************************************************/
 /** Enable HTTP Keep-Alive per https://vimeo.com/287511222          **/
@@ -27,86 +36,40 @@ exports.handler = async function(event) {
   try {
     console.log('START')
     console.log('ENV SECRETARN: ' + process.env.SECRETARN)
-    console.log('ENV RDSSERVER' + process.env.DBCLUSTERARN)
+    console.log('ENV DBCLUSTERARN: ' + process.env.DBCLUSTERARN)
+    console.log('ENV DBCLUSTERID: ' + process.env.DBCLUSTERID)
 
-    var action = 'selectretry'
+    var action = 'NOACTION'
 
     if (event.queryStringParameters && event.queryStringParameters.action) {
       action = event.queryStringParameters.action;
     }
 
-    if (action == 'init') {
+    if (action == 'test') {
 
-      const params1 = {
-      secretArn: process.env.SECRETARN,
-      resourceArn: process.env.DBCLUSTERARN,
-      sql: `CREATE DATABASE demodb CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+      var params = {
+        DBClusterIdentifier: process.env.DBCLUSTERID
       }
-      let data1 = await RDS.executeStatement(params1).promise()
-
-      const params2 = {
-        secretArn: process.env.SECRETARN,
-        resourceArn: process.env.DBCLUSTERARN,
-        sql: `CREATE table demodb.demotable(id BIGINT AUTO_INCREMENT, demoname VARCHAR(255), demodate DATETIME, PRIMARY KEY (id))`
+      var res = await RDS.describeDBClusters(params).promise()
+ 
+      var serverStatus = 'DOWN'
+      if (res.DBClusters[0].Capacity > 0) {
+        serverStatus = 'UP';
       }
-      let data2 = await RDS.executeStatement(params2).promise()
-
-      const params3 = {
-        secretArn: process.env.SECRETARN,
-        resourceArn: process.env.DBCLUSTERARN,
-        sql: `INSERT INTO demodb.demotable(demoname,demodate) VALUES (:name,:date)`,
-        parameters: [
-          {
-            name: 'name',
-            value: {
-              stringValue : 'Welcome'
-            }
-          },{
-            name: 'date',
-            value: {
-              stringValue : '2019-08-18 01:01:01'
-            }
-          }
-        ]
-      }
-      let data3 = await RDS.executeStatement(params3).promise()
-      var responsedata = JSON.stringify(data3, null, 2);
-
+      
       return {
         statusCode: 200,
         headers : { 'Content-Type': 'text/html; charset=utf-8'},
-        body : `<html><body>ACTION ${action} This is path ${event.path} here is your response ${responsedata}</body></html>\n`
+        body : `<html><body>Hi! This is path ${event.path} STATUS: ${serverStatus} Capacity: ${res.DBClusters[0].Capacity} </body></html>\n`
       }
 
-    } else if (action == 'select') {
+    } else if (action == 'warmup') {
 
       const params = {
         secretArn: process.env.SECRETARN,
         resourceArn: process.env.DBCLUSTERARN,
-        includeResultMetadata: true,
-        sql: `select * from demotable`,
-        database: 'demodb'
-      }
 
-      console.log('Param' + JSON.stringify(params))
-  
-      var data1 = await RDS.executeStatement(params).promise()
-      var tabledata = JSON.stringify(data1, null, 2);
-
-      return {
-        statusCode: 200,
-        headers : { 'Content-Type': 'text/html; charset=utf-8'},
-        body : `<html><body>ACTION ${action} This is path ${event.path} here is your data ${tabledata}</body></html>\n`
-      }
-
-
-    } else if (action == 'selectretry') {
-
-      const params = {
-        secretArn: process.env.SECRETARN,
-        resourceArn: process.env.DBCLUSTERARN,
-        sql: `select * from demotable`,
-        database: 'demodb'
+        sql: `select 1`
       }
   
       var start = new Date()
@@ -120,13 +83,20 @@ exports.handler = async function(event) {
 
         var startQuery = new Date()
         try {
-          data1 = await RDS.executeStatement(params).promise()
+          data1 = await RDSDATA.executeStatement(params).promise()
         } catch(e) {
 
           console.log('E ' + JSON.stringify(e))
           console.log('Exception ' + e + ' with params: ' + JSON.stringify(params))
 
-          if (e.code == 'BadRequestException') {
+          if (e.code == 'BadRequestException' && e.message.startsWith('Communications link failure')) {
+            console.log('BadRequestException ' + JSON.stringify(e))
+            var paramsDbCluster = {
+              DBClusterIdentifier: process.env.DBCLUSTERID
+            }
+            var res = await RDS.describeDBClusters(paramsDbCluster).promise()
+            console.log('Current DBCluster Capacity: ' + res.DBClusters[0].Capacity)
+            
             retry = true;
           } else { 
             throw(e)
@@ -149,6 +119,75 @@ exports.handler = async function(event) {
         body : `<html><body>ACTION ${action} This is path ${event.path} here is your data ${tabledata}</body></html>\n`
       }
       
+    } else if (action == 'hi') {
+      return {
+        statusCode: 200,
+        headers : { 'Content-Type': 'text/html; charset=utf-8'},
+        body : `<html><body>Hi! This is path ${event.path} </body></html>\n`
+      }
+    } else if (action == 'init') {
+
+      const params1 = {
+        secretArn: process.env.SECRETARN,
+        resourceArn: process.env.DBCLUSTERARN,
+        sql: `CREATE DATABASE demodb CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+      }
+      let data1 = await RDSDATA.executeStatement(params1).promise()
+
+      const params2 = {
+        secretArn: process.env.SECRETARN,
+        resourceArn: process.env.DBCLUSTERARN,
+        sql: `CREATE table demodb.demotable(id BIGINT AUTO_INCREMENT, demoname VARCHAR(255), demodate DATETIME, PRIMARY KEY (id))`
+      }
+      let data2 = await RDSDATA.executeStatement(params2).promise()
+
+      const params3 = {
+        secretArn: process.env.SECRETARN,
+        resourceArn: process.env.DBCLUSTERARN,
+        sql: `INSERT INTO demodb.demotable(demoname,demodate) VALUES (:name,:date)`,
+        parameters: [
+          {
+            name: 'date',
+            value: {
+              stringValue : '2019-08-18 01:01:01'
+            }
+          },{
+            name: 'name',
+            value: {
+              stringValue : 'Welcome'
+            }
+          }
+        ]
+      }
+      let data3 = await RDSDATA.executeStatement(params3).promise()
+      var responsedata = JSON.stringify(data3, null, 2);
+
+      return {
+        statusCode: 200,
+        headers : { 'Content-Type': 'text/html; charset=utf-8'},
+        body : `<html><body>ACTION ${action} This is path ${event.path} here is your response ${responsedata}</body></html>\n`
+      }
+
+    } else if (action == 'select') {
+
+      const params = {
+        secretArn: process.env.SECRETARN,
+        resourceArn: process.env.DBCLUSTERARN,
+        includeResultMetadata: true,
+        sql: `select * from demotable`,
+        database: 'demodb'
+      }
+  
+      var data1 = await RDSDATA.executeStatement(params).promise()
+      var tabledata = JSON.stringify(data1, null, 2);
+
+      return {
+        statusCode: 200,
+        headers : { 'Content-Type': 'text/html; charset=utf-8'},
+        body : `<html><body>ACTION ${action} This is path ${event.path} here is your data ${tabledata}</body></html>\n`
+      }
+
+
     } else if (action == 'batch') {
       const params3 = {
         secretArn: process.env.SECRETARN,
@@ -186,7 +225,7 @@ exports.handler = async function(event) {
           ],
         ]
       }
-      let data4 = await RDS.batchExecuteStatement(params3).promise()
+      let data4 = await RDSDATA.batchExecuteStatement(params3).promise()
 
       var tabledata = JSON.stringify(data4, null, 2);
 
@@ -204,7 +243,7 @@ exports.handler = async function(event) {
         resourceArn: process.env.DBCLUSTERARN,
         database: 'demodb'
       };
-      let transData = await RDS.beginTransaction(paramsTransaction).promise();
+      let transData = await RDSDATA.beginTransaction(paramsTransaction).promise();
       transId = transData.transactionId;
 
 
@@ -215,7 +254,7 @@ exports.handler = async function(event) {
         database: 'demodb',
         transactionId: transId
       }
-      let data1 = await RDS.executeStatement(params1).promise();
+      let data1 = await RDSDATA.executeStatement(params1).promise();
       const autogeneratedID = data1.generatedFields[0].longValue;
 
       var name2 = 'NAME2 after ' + autogeneratedID
@@ -227,7 +266,7 @@ exports.handler = async function(event) {
         transactionId: transId
       }
 
-      let data2 = await RDS.executeStatement(params2).promise();
+      let data2 = await RDSDATA.executeStatement(params2).promise();
       
       // commit transaction
       let paramsCommitTransaction = {
@@ -236,7 +275,7 @@ exports.handler = async function(event) {
         transactionId: transId
       };
 
-      let commitData = await RDS.commitTransaction(paramsCommitTransaction).promise();     
+      let commitData = await RDSDATA.commitTransaction(paramsCommitTransaction).promise();     
       var tabledata = JSON.stringify(commitData, null, 2)
       return {
         statusCode: 200,
