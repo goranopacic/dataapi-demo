@@ -14,6 +14,11 @@ import secretsmanager = require('@aws-cdk/aws-secretsmanager');
 import { SecretRotation, SecretRotationApplication, SecretRotationOptions } from '@aws-cdk/aws-rds'
 import { TIMEOUT } from 'dns';
 import { AuroraServerless } from "./auroraserverless";
+import elbv2 = require('@aws-cdk/aws-elasticloadbalancingv2');
+import targets = require('@aws-cdk/aws-elasticloadbalancingv2-targets');
+import ec2 = require('@aws-cdk/aws-ec2');
+import { SubnetType } from '@aws-cdk/aws-ec2';
+
 
 
 export class DataapiDemoStack extends cdk.Stack {
@@ -21,7 +26,16 @@ export class DataapiDemoStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    var aurora = new AuroraServerless(this,'aurora-serverless')
+    //NEW VPC
+    const vpc = new ec2.Vpc(this, "movpc",{
+      maxAzs: 2
+    });
+      
+    //AURORA
+    var aurora = new AuroraServerless(this,'aurora-serverless', {
+      vpc: vpc,
+      clusterName: 'demoapi'
+    })
 
     //LAMBDA
 
@@ -53,6 +67,7 @@ export class DataapiDemoStack extends cdk.Stack {
     demoLambda.addToRolePolicy(statement3);
 
     //API GW
+    /*
     const rootApi = new apigateway.RestApi(this, 'demo-api', {});
     const integration = new apigateway.LambdaIntegration(demoLambda);
 
@@ -60,7 +75,31 @@ export class DataapiDemoStack extends cdk.Stack {
 
     const demoResource = demoApi.addResource('demo');
     const demoMethod = demoResource.addMethod('GET', integration);
+    */
     
+    //ALB
+    const securityGroup = new ec2.SecurityGroup(this, 'websecurity', { 
+      vpc, 
+      allowAllOutbound: false,
+    });  
+    securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80));
+
+    const loadBalancer = new elbv2.ApplicationLoadBalancer(this, 'LB', {
+      vpc,
+      internetFacing: true,
+      securityGroup: securityGroup
+    }
+    );
+
+    const listener = loadBalancer.addListener('Listener', { port: 80 });
+    listener.addTargets('Targets', {
+        targets: [new targets.LambdaTarget(demoLambda)]
+    });
+
+    new cdk.CfnOutput(this,'ALBHttpEndPoint', {
+      value: loadBalancer.loadBalancerDnsName
+  })
+
   } 
 }
   

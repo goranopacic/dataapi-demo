@@ -39,7 +39,7 @@ exports.handler = async function(event) {
     console.log('ENV DBCLUSTERARN: ' + process.env.DBCLUSTERARN)
     console.log('ENV DBCLUSTERID: ' + process.env.DBCLUSTERID)
 
-    var action = 'NOACTION'
+    var action = 'hi'
 
     if (event.queryStringParameters && event.queryStringParameters.action) {
       action = event.queryStringParameters.action;
@@ -120,6 +120,7 @@ exports.handler = async function(event) {
       }
       
     } else if (action == 'hi') {
+      console.log('hi')
       return {
         statusCode: 200,
         headers : { 'Content-Type': 'text/html; charset=utf-8'},
